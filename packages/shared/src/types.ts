@@ -72,6 +72,14 @@ export interface UserPublic {
   created_at: string;
 }
 
+export enum PaymentStatus {
+  None = "none",
+  Pending = "pending",
+  Verified = "verified",
+  Released = "released",
+  Refunded = "refunded",
+}
+
 export interface Offer {
   id: number;
   listing_id: number;
@@ -82,6 +90,8 @@ export interface Offer {
   delivery_fee: string;
   passed_knowledge_gate: boolean;
   created_at: string;
+  payment_status: PaymentStatus;
+  payment_reference: string | null;
 }
 
 export interface Subscription {
@@ -132,4 +142,5 @@ export interface SellerAnalytics {
   avg_offer_percent_of_list: number | null;
   conversations: number;
   ghosted_conversations: number;
+  funds_verified_deals: number;
 }

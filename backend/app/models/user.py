@@ -38,6 +38,8 @@ class User(Base):
     ghost_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    # Platform staff — may verify manual escrow payments on any deal.
+    is_admin: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -46,7 +48,9 @@ class User(Base):
         back_populates="seller", cascade="all, delete-orphan"
     )
     offers: Mapped[list["Offer"]] = relationship(
-        back_populates="buyer", cascade="all, delete-orphan"
+        back_populates="buyer",
+        cascade="all, delete-orphan",
+        foreign_keys="Offer.buyer_id",
     )
     subscription: Mapped["Subscription | None"] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan"

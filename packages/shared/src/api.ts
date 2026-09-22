@@ -46,8 +46,11 @@ export interface ApiClient {
     question: string,
   ): Promise<{ answer: string; specs_guard_enabled: boolean }>;
   myListings(): Promise<Listing[]>;
+  myOffers(): Promise<Offer[]>;
   offersForListing(listingId: number): Promise<Offer[]>;
   offerAction(offerId: number, action: OfferAction): Promise<Offer>;
+  markPaymentSent(offerId: number, reference?: string): Promise<Offer>;
+  verifyPayment(offerId: number): Promise<Offer>;
   getSubscription(): Promise<Subscription>;
   upgrade(tier: SubscriptionTier): Promise<Subscription>;
   sellerAnalytics(): Promise<SellerAnalytics>;
@@ -131,12 +134,27 @@ export function createApiClient(baseUrl: string, tokens: TokenStore = memoryToke
       return request("/listings/mine");
     },
 
+    myOffers() {
+      return request("/offers/mine");
+    },
+
     offersForListing(listingId) {
       return request(`/listings/${listingId}/offers`);
     },
 
     offerAction(offerId, action) {
       return request(`/offers/${offerId}/${action}`, { method: "POST" });
+    },
+
+    markPaymentSent(offerId, reference) {
+      return request(`/offers/${offerId}/payment/mark-sent`, {
+        method: "POST",
+        body: JSON.stringify({ reference: reference ?? null }),
+      });
+    },
+
+    verifyPayment(offerId) {
+      return request(`/offers/${offerId}/payment/verify`, { method: "POST" });
     },
 
     getSubscription() {

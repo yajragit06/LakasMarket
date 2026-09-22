@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.database import get_db
 from app.models.conversation import Conversation
-from app.models.enums import ConversationStatus, ListingStatus, OfferStatus, SubscriptionTier
+from app.models.enums import (
+    ConversationStatus,
+    ListingStatus,
+    OfferStatus,
+    PaymentStatus,
+    SubscriptionTier,
+)
 from app.models.listing import Listing
 from app.models.offer import Offer
 from app.models.user import User
@@ -73,6 +79,16 @@ def seller_analytics(
         ).all()
     )
 
+    funds_verified = db.scalar(
+        select(func.count())
+        .select_from(Offer)
+        .join(Listing, Offer.listing_id == Listing.id)
+        .where(
+            Listing.seller_id == current.id,
+            Offer.payment_status.in_((PaymentStatus.VERIFIED, PaymentStatus.RELEASED)),
+        )
+    )
+
     return SellerAnalytics(
         active_listings=listing_counts.get(ListingStatus.ACTIVE, 0),
         reserved_listings=listing_counts.get(ListingStatus.RESERVED, 0),
@@ -84,4 +100,5 @@ def seller_analytics(
         avg_offer_percent_of_list=avg_pct,
         conversations=sum(conv_counts.values()),
         ghosted_conversations=conv_counts.get(ConversationStatus.GHOSTED, 0),
+        funds_verified_deals=funds_verified or 0,
     )

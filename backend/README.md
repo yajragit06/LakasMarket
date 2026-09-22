@@ -65,6 +65,15 @@ Alembic migrations against `Base.metadata` instead.
 | POST | `/conversations/{id}/messages` | ✅ (participant) | Send a message; a buyer reply re-opens a ghosted thread |
 | POST | `/conversations/{id}/report-ghost` | ✅ (seller) | Penalise a buyer who went silent after the seller replied |
 | POST | `/conversations/{id}/negotiate` | ✅ (buyer) | Propose a price; the seller's AI bot auto-counters in-thread (Pro, bot enabled) |
+| GET | `/offers/mine` | ✅ (buyer) | The buyer's own offers (silently-rejected lowballs omitted) |
+| POST | `/offers/{id}/payment/mark-sent` | ✅ (buyer) | Record funds sent on an accepted deal → escrow PENDING |
+| POST | `/offers/{id}/payment/verify` | ✅ (seller/admin) | Confirm funds received → "Funds Verified" |
+
+Manual "Funds Verified" escrow: no PSP holds money; the platform records a
+verification state (`none → pending → verified → released`, or `refunded` if a
+deal falls through). A real payment provider can later drive the same
+transitions from a webhook. Completing a verified deal releases it; reporting a
+ghost on a paid deal refunds it.
 | GET | `/subscription` | ✅ | Current plan, limits, Specs Guard access |
 | POST | `/subscription/upgrade` | ✅ | Switch SaaS tier (billing hook point) |
 

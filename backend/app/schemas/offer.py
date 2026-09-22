@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import OfferStatus
+from app.models.enums import OfferStatus, PaymentStatus
 
 
 class OfferCreate(BaseModel):
@@ -13,6 +13,12 @@ class OfferCreate(BaseModel):
     want_delivery: bool = False
     # Answers to the Product Knowledge Gateway: question_id -> option index.
     quiz_answers: dict[int, int] = Field(default_factory=dict)
+
+
+class PaymentMark(BaseModel):
+    """Buyer's claim that they've sent funds, with an optional reference."""
+
+    reference: str | None = Field(default=None, max_length=120)
 
 
 class OfferPublic(BaseModel):
@@ -27,6 +33,8 @@ class OfferPublic(BaseModel):
     delivery_fee: Decimal
     passed_knowledge_gate: bool
     created_at: datetime
+    payment_status: PaymentStatus
+    payment_reference: str | None
 
 
 class OfferResult(BaseModel):

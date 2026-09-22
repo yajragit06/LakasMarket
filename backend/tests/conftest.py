@@ -19,17 +19,26 @@ settings.environment = "test"
 
 
 @pytest.fixture
-def client():
+def _engine():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     Base.metadata.create_all(engine)
+    yield engine
+    engine.dispose()
 
+
+@pytest.fixture
+def _session_factory(_engine):
+    return sessionmaker(bind=_engine, autoflush=False, autocommit=False, future=True)
+
+
+@pytest.fixture
+def client(_session_factory):
     def override_get_db():
-        db = TestingSession()
+        db = _session_factory()
         try:
             yield db
         finally:
@@ -41,8 +50,17 @@ def client():
     # No context manager -> lifespan events don't fire (we don't want them here).
     yield TestClient(app)
     app.dependency_overrides.clear()
-    Base.metadata.drop_all(engine)
-    engine.dispose()
+
+
+@pytest.fixture
+def db_session(_session_factory):
+    """A direct DB session sharing the client's database — for test-only setup
+    the API deliberately forbids, e.g. promoting a user to admin."""
+    db = _session_factory()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def auth_headers(client: TestClient, email: str, password: str = "password123", **kw) -> dict:

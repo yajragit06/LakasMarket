@@ -46,6 +46,7 @@ export function SellerDashboard() {
                 : `${stats.avg_offer_percent_of_list}%`
             }
           />
+          <Stat label="✓ Funds Verified deals" value={stats.funds_verified_deals} />
           <Stat label="Expired 'tonight' offers" value={stats.expired_take_tonight_offers} />
         </div>
       ) : (
@@ -73,6 +74,18 @@ function Stat({ label, value }: { label: string; value: number | string }) {
   );
 }
 
+function PaymentBadge({ status }: { status: string }) {
+  if (status === "none") return <span style={{ color: "#94a3b8" }}>—</span>;
+  const map: Record<string, [string, string]> = {
+    pending: ["#b45309", "Funds sent — verify"],
+    verified: ["#0b6b4f", "✓ Funds Verified"],
+    released: ["#0b6b4f", "✓ Released"],
+    refunded: ["#94a3b8", "Refunded"],
+  };
+  const [color, label] = map[status] ?? ["#1a1a1a", status];
+  return <span style={{ color, fontWeight: 600, fontSize: 13 }}>{label}</span>;
+}
+
 function SellerListingRow({ listing }: { listing: Listing }) {
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +105,19 @@ function SellerListingRow({ listing }: { listing: Listing }) {
     setError(null);
     try {
       await api.offerAction(offerId, action);
+      await loadOffers();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyFunds(offerId: number) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.verifyPayment(offerId);
       await loadOffers();
     } catch (err) {
       setError((err as Error).message);
@@ -124,6 +150,7 @@ function SellerListingRow({ listing }: { listing: Listing }) {
               <th>Amount</th>
               <th>Speed</th>
               <th>Status</th>
+              <th>Payment</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -133,7 +160,13 @@ function SellerListingRow({ listing }: { listing: Listing }) {
                 <td>B$ {Number(o.amount).toFixed(2)}</td>
                 <td>{o.is_take_tonight ? "Tonight" : "—"}</td>
                 <td>{o.status}</td>
+                <td><PaymentBadge status={o.payment_status} /></td>
                 <td style={{ display: "flex", gap: 6, padding: "6px 0" }}>
+                  {o.payment_status === "pending" && (
+                    <button disabled={busy} onClick={() => verifyFunds(o.id)}>
+                      Verify funds
+                    </button>
+                  )}
                   {o.status === "pending" && (
                     <>
                       <button disabled={busy} onClick={() => act(o.id, "accept")}>

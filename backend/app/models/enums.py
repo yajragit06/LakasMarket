@@ -45,6 +45,20 @@ class OfferStatus(str, enum.Enum):
     EXPIRED = "expired"
 
 
+class PaymentStatus(str, enum.Enum):
+    """Manual 'Funds Verified' escrow states for an accepted deal.
+
+    No PSP holds money in this flow — the platform records the verification
+    state as a trust ledger. A real payment provider can later drive the same
+    transitions programmatically (e.g. a webhook calling the verify endpoint).
+    """
+    NONE = "none"          # accepted, no payment action yet
+    PENDING = "pending"    # buyer says funds sent (with a reference)
+    VERIFIED = "verified"  # seller/admin confirmed receipt -> "Funds Verified"
+    RELEASED = "released"  # deal completed after verification
+    REFUNDED = "refunded"  # deal fell through after a payment was marked
+
+
 class ConversationStatus(str, enum.Enum):
     OPEN = "open"
     GHOSTED = "ghosted"   # buyer went silent ("Hilang kana tiup angin")

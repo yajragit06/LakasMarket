@@ -1,21 +1,23 @@
 """Offer endpoints wiring together the anti-lowball, gateway, adab and
 logistics engines."""
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core import adab
+from app.core import adab, escrow
 from app.core.anti_lowball import evaluate_offer
 from app.core.lifecycle import expire_stale_offers
 from app.core.knowledge_gateway import grade_quiz
 from app.core.logistics import delivery_fee
 from app.database import get_db
-from app.models.enums import AdabEventType, ListingStatus, OfferStatus
+from app.models.enums import AdabEventType, ListingStatus, OfferStatus, PaymentStatus
 from app.models.listing import Listing
 from app.models.offer import Offer
 from app.models.user import User
-from app.schemas.offer import OfferCreate, OfferPublic, OfferResult
+from app.schemas.offer import OfferCreate, OfferPublic, OfferResult, PaymentMark
 
 router = APIRouter(tags=["offers"])
 
@@ -121,6 +123,24 @@ def list_offers_for_seller(
     return offers
 
 
+@router.get("/offers/mine", response_model=list[OfferPublic])
+def my_offers(
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+) -> list[Offer]:
+    """The buyer's own offers. Silently-rejected lowballs are omitted so the
+    neutral-rejection illusion holds even in the buyer's own history."""
+    stmt = (
+        select(Offer)
+        .where(Offer.buyer_id == current.id, Offer.status != OfferStatus.AUTO_REJECTED)
+        .order_by(Offer.created_at.desc())
+    )
+    offers = list(db.scalars(stmt).all())
+    if expire_stale_offers(offers):
+        db.commit()
+    return offers
+
+
 def _seller_offer(offer_id: int, db: Session, current: User) -> Offer:
     """Fetch an offer, ensuring the caller is the listing's seller."""
     offer = db.get(Offer, offer_id)
@@ -197,8 +217,76 @@ def complete_offer(
     for other in offer.listing.offers:
         if other.id != offer.id and other.status == OfferStatus.PENDING:
             other.status = OfferStatus.DECLINED
+    # If funds were verified via manual escrow, release them on completion.
+    if offer.payment_status == PaymentStatus.VERIFIED:
+        offer.payment_status = PaymentStatus.RELEASED
     adab.apply_event(offer.buyer, AdabEventType.COMPLETED_DEAL)
     adab.apply_event(current, AdabEventType.COMPLETED_DEAL)
+    db.commit()
+    db.refresh(offer)
+    return offer
+
+
+@router.post("/offers/{offer_id}/payment/mark-sent", response_model=OfferPublic)
+def mark_payment_sent(
+    offer_id: int,
+    payload: PaymentMark,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+) -> Offer:
+    """Buyer records that they've sent funds for an accepted deal.
+
+    Moves the deal's escrow state to PENDING, awaiting the seller's (or an
+    admin's) verification. No money moves through the platform — this is the
+    trust ledger a real PSP would later drive automatically.
+    """
+    offer = db.get(Offer, offer_id)
+    if offer is None or offer.status == OfferStatus.AUTO_REJECTED:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Offer not found")
+    if offer.buyer_id != current.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your offer")
+    if offer.status != OfferStatus.ACCEPTED:
+        raise HTTPException(status.HTTP_409_CONFLICT, "The deal must be accepted first")
+    try:
+        escrow.assert_transition(offer.payment_status, PaymentStatus.PENDING)
+    except escrow.InvalidTransition as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
+
+    offer.payment_status = PaymentStatus.PENDING
+    offer.payment_reference = payload.reference
+    offer.payment_marked_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(offer)
+    return offer
+
+
+@router.post("/offers/{offer_id}/payment/verify", response_model=OfferPublic)
+def verify_payment(
+    offer_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+) -> Offer:
+    """Seller (or admin) confirms funds received → the 'Funds Verified' badge."""
+    offer = db.get(Offer, offer_id)
+    if offer is None or offer.status == OfferStatus.AUTO_REJECTED:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Offer not found")
+    listing = db.get(Listing, offer.listing_id)
+    is_seller = listing is not None and listing.seller_id == current.id
+    if not (is_seller or current.is_admin):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the seller or an admin can verify")
+    try:
+        escrow.assert_transition(offer.payment_status, PaymentStatus.VERIFIED)
+    except escrow.InvalidTransition as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "The buyer must mark funds as sent before you can verify."
+            if offer.payment_status == PaymentStatus.NONE
+            else str(exc),
+        )
+
+    offer.payment_status = PaymentStatus.VERIFIED
+    offer.payment_verified_at = datetime.now(timezone.utc)
+    offer.payment_verified_by = current.id
     db.commit()
     db.refresh(offer)
     return offer
@@ -218,6 +306,9 @@ def report_ghost(
     # Free the listing back up for other buyers.
     offer.status = OfferStatus.DECLINED
     offer.listing.status = ListingStatus.ACTIVE
+    # If the buyer had marked/verified funds, the fallen-through deal is refunded.
+    if offer.payment_status in (PaymentStatus.PENDING, PaymentStatus.VERIFIED):
+        offer.payment_status = PaymentStatus.REFUNDED
     db.commit()
     db.refresh(offer)
     return offer

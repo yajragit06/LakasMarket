@@ -16,7 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-from app.models.enums import OfferStatus
+from app.models.enums import OfferStatus, PaymentStatus
 
 
 class Offer(Base):
@@ -53,8 +53,22 @@ class Offer(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+    # --- Manual "Funds Verified" escrow -----------------------------------
+    payment_status: Mapped[PaymentStatus] = mapped_column(
+        Enum(PaymentStatus, native_enum=False), nullable=False, default=PaymentStatus.NONE
+    )
+    # Buyer-supplied transfer note/reference (e.g. bank ref). Not sensitive.
+    payment_reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    payment_marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payment_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payment_verified_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     listing: Mapped["Listing"] = relationship(back_populates="offers")
-    buyer: Mapped["User"] = relationship(back_populates="offers")
+    buyer: Mapped["User"] = relationship(
+        back_populates="offers", foreign_keys=[buyer_id]
+    )
 
     @property
     def seller_visible(self) -> bool:

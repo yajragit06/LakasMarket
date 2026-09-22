@@ -3,6 +3,7 @@ import type { Listing } from "@lakasmarket/shared";
 import { District, SaleMode } from "@lakasmarket/shared";
 import { api } from "../api/client";
 import { ListingCard } from "../components/ListingCard";
+import { BuyerOffers } from "../components/BuyerOffers";
 import { CreateListing } from "./CreateListing";
 
 export function Dashboard() {
@@ -31,6 +32,7 @@ export function Dashboard() {
 
   return (
     <div className="container">
+      <BuyerOffers />
       <CreateListing onCreated={refresh} />
 
       <div className="card">
