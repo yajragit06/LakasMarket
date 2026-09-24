@@ -75,7 +75,14 @@ deal falls through). A real payment provider can later drive the same
 transitions from a webhook. Completing a verified deal releases it; reporting a
 ghost on a paid deal refunds it.
 | GET | `/subscription` | ✅ | Current plan, limits, Specs Guard access |
-| POST | `/subscription/upgrade` | ✅ | Switch SaaS tier (billing hook point) |
+| POST | `/subscription/upgrade` | ✅ | Downgrade to Basic (immediate) or request a paid upgrade (staged) |
+| POST | `/subscription/payment/mark-sent` | ✅ | User records payment for a pending upgrade |
+| POST | `/subscription/{user_id}/activate` | ✅ (admin) | Verify payment & activate the pending upgrade |
+
+Billing gate (manual): paid upgrades don't flip the plan until verified —
+`upgrade` stages a `pending_tier`, the user marks payment sent, and an admin
+activates it (the single choke point a real PSP webhook would call). Downgrades
+to Basic are free and immediate. Monthly prices: Pro B$15, Business B$49.
 
 Tier rules enforced at the API: Basic is capped at 5 active listings and the
 standard 20% floor; custom floors are Pro+; bulk upload is Business-only.

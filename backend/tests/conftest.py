@@ -63,6 +63,25 @@ def db_session(_session_factory):
         db.close()
 
 
+def set_tier(db_session, email: str, tier: str) -> None:
+    """Test-only shortcut to put a user on a paid tier, bypassing the billing
+    gate. Feature tests that merely need a tier use this; the billing flow has
+    its own dedicated tests."""
+    from app.models.enums import PaymentStatus, SubscriptionTier
+    from app.models.subscription import Subscription
+    from app.models.user import User
+
+    user = db_session.query(User).filter_by(email=email).one()
+    sub = user.subscription
+    if sub is None:
+        sub = Subscription(user_id=user.id)
+        db_session.add(sub)
+    sub.tier = SubscriptionTier(tier)
+    sub.pending_tier = None
+    sub.payment_status = PaymentStatus.NONE
+    db_session.commit()
+
+
 def auth_headers(client: TestClient, email: str, password: str = "password123", **kw) -> dict:
     """Register (idempotently) + log in, returning an Authorization header."""
     client.post(

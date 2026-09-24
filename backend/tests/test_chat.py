@@ -1,5 +1,5 @@
 """End-to-end tests for the quiz/Adab-gated chat layer."""
-from tests.conftest import auth_headers
+from tests.conftest import auth_headers, set_tier
 
 LISTING = {
     "title": "Mechanical keyboard",
@@ -126,7 +126,7 @@ def test_report_ghost_requires_seller_reply_then_penalises(client):
     assert buyer_me["reliability_score"] < 70.0
 
 
-def test_negotiation_bot_counters_in_thread(client):
+def test_negotiation_bot_counters_in_thread(client, db_session):
     seller = auth_headers(client, "seller@example.com")
     buyer = auth_headers(client, "buyer@example.com")
     # Enabling the bot requires Pro.
@@ -134,7 +134,7 @@ def test_negotiation_bot_counters_in_thread(client):
         client.post("/listings", json={**LISTING, "negotiation_enabled": True}, headers=seller).status_code
         == 402
     )
-    client.post("/subscription/upgrade", json={"tier": "pro"}, headers=seller)
+    set_tier(db_session, "seller@example.com", "pro")
     lid = _listing(client, seller, negotiation_enabled=True, auto_generate_questions=False)["id"]
     cid = client.post(
         f"/listings/{lid}/conversations", json={"opening_message": "hi"}, headers=buyer
@@ -163,10 +163,10 @@ def test_negotiate_blocked_when_bot_disabled(client):
     assert res.status_code == 409
 
 
-def test_seller_cannot_negotiate_against_self(client):
+def test_seller_cannot_negotiate_against_self(client, db_session):
     seller = auth_headers(client, "seller@example.com")
     buyer = auth_headers(client, "buyer@example.com")
-    client.post("/subscription/upgrade", json={"tier": "pro"}, headers=seller)
+    set_tier(db_session, "seller@example.com", "pro")
     lid = _listing(client, seller, negotiation_enabled=True, auto_generate_questions=False)["id"]
     cid = client.post(f"/listings/{lid}/conversations", json={}, headers=buyer).json()["id"]
     # The seller is a participant but only the buyer may propose a price.

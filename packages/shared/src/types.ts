@@ -100,6 +100,9 @@ export interface Subscription {
   has_specs_guard: boolean;
   started_at: string;
   renews_at: string | null;
+  pending_tier: SubscriptionTier | null;
+  payment_status: PaymentStatus;
+  amount_due: number;
 }
 
 export type OfferAction = "accept" | "decline" | "complete" | "report-ghost";

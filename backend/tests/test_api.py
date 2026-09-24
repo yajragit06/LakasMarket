@@ -1,5 +1,5 @@
 """End-to-end API tests covering the auth, listing, and offer flows."""
-from tests.conftest import auth_headers
+from tests.conftest import auth_headers, set_tier
 
 LISTING = {
     "title": "Mechanical keyboard",
@@ -159,7 +159,7 @@ def test_report_ghost_penalises_buyer(client):
     assert buyer_me["reliability_score"] < 70.0
 
 
-def test_specs_guard_ask_gated_by_seller_plan(client):
+def test_specs_guard_ask_gated_by_seller_plan(client, db_session):
     seller = auth_headers(client, "seller@example.com")
     buyer = auth_headers(client, "buyer@example.com")
     lid = _create_listing(client, seller)
@@ -170,29 +170,29 @@ def test_specs_guard_ask_gated_by_seller_plan(client):
     assert r.json()["specs_guard_enabled"] is False
 
     # Upgrade the seller to Pro -> Specs Guard enabled.
-    client.post("/subscription/upgrade", json={"tier": "pro"}, headers=seller)
+    set_tier(db_session, "seller@example.com", "pro")
     r2 = client.post(f"/listings/{lid}/ask", json={"question": "Is it wired?"}, headers=buyer)
     assert r2.json()["specs_guard_enabled"] is True
 
 
-def test_basic_tier_cannot_set_custom_floor(client):
+def test_basic_tier_cannot_set_custom_floor(client, db_session):
     headers = auth_headers(client, "seller@example.com")
     res = client.post("/listings", json={**LISTING, "floor_percent": 40}, headers=headers)
     assert res.status_code == 402
 
-    client.post("/subscription/upgrade", json={"tier": "pro"}, headers=headers)
+    set_tier(db_session, "seller@example.com", "pro")
     res = client.post("/listings", json={**LISTING, "floor_percent": 40}, headers=headers)
     assert res.status_code == 201
     assert res.json()["hard_floor_price"] == 60.0
 
 
-def test_bulk_upload_is_business_only(client):
+def test_bulk_upload_is_business_only(client, db_session):
     headers = auth_headers(client, "seller@example.com")
     bulk = {"listings": [{**LISTING, "title": f"Bulk item {i}"} for i in range(3)]}
 
     assert client.post("/listings/bulk", json=bulk, headers=headers).status_code == 402
 
-    client.post("/subscription/upgrade", json={"tier": "business"}, headers=headers)
+    set_tier(db_session, "seller@example.com", "business")
     res = client.post("/listings/bulk", json=bulk, headers=headers)
     assert res.status_code == 201
     assert len(res.json()) == 3
@@ -218,14 +218,14 @@ def test_cannot_accept_second_offer_while_reserved(client):
     assert statuses[second] == "declined"
 
 
-def test_seller_analytics_gated_and_counts(client):
+def test_seller_analytics_gated_and_counts(client, db_session):
     seller = auth_headers(client, "seller@example.com")
     buyer = auth_headers(client, "buyer@example.com")
 
     # Basic tier: analytics is paywalled.
     assert client.get("/analytics/seller", headers=seller).status_code == 402
 
-    client.post("/subscription/upgrade", json={"tier": "pro"}, headers=seller)
+    set_tier(db_session, "seller@example.com", "pro")
     # Pro sellers get auto-generated quiz questions; disable so the buyer's
     # bare offers pass the gateway and reach the anti-lowball engine.
     lid = _create_listing(client, seller, auto_generate_questions=False)
@@ -252,12 +252,44 @@ def test_login_rate_limited(client):
     assert res.status_code == 429
 
 
-def test_subscription_upgrade(client):
+def test_subscription_upgrade_is_billing_gated(client, db_session):
+    """Upgrading to a paid tier stages a pending request; it only activates
+    after the user pays and an admin verifies."""
     headers = auth_headers(client, "seller@example.com")
     assert client.get("/subscription", headers=headers).json()["tier"] == "basic"
+
+    # Requesting Pro does NOT flip the tier yet.
     res = client.post("/subscription/upgrade", json={"tier": "pro"}, headers=headers)
-    assert res.status_code == 200
     body = res.json()
+    assert body["tier"] == "basic"
+    assert body["pending_tier"] == "pro"
+    assert body["amount_due"] == 15.0
+
+    # User marks payment sent -> pending.
+    marked = client.post(
+        "/subscription/payment/mark-sent", json={"reference": "BIBD sub 22"}, headers=headers
+    )
+    assert marked.json()["payment_status"] == "pending"
+
+    # A non-admin cannot activate.
+    from app.models.user import User
+
+    seller_id = db_session.query(User).filter_by(email="seller@example.com").one().id
+    assert client.post(f"/subscription/{seller_id}/activate", headers=headers).status_code == 403
+
+    # Promote an admin and activate.
+    admin = auth_headers(client, "admin@example.com")
+    admin_user = db_session.query(User).filter_by(email="admin@example.com").one()
+    admin_user.is_admin = True
+    db_session.commit()
+
+    activated = client.post(f"/subscription/{seller_id}/activate", headers=admin)
+    assert activated.status_code == 200
+    body = activated.json()
     assert body["tier"] == "pro"
-    assert body["listing_limit"] is None
+    assert body["pending_tier"] is None
     assert body["has_specs_guard"] is True
+
+    # Downgrade to Basic is immediate (no billing).
+    down = client.post("/subscription/upgrade", json={"tier": "basic"}, headers=headers)
+    assert down.json()["tier"] == "basic"

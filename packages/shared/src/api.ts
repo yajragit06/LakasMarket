@@ -53,6 +53,8 @@ export interface ApiClient {
   verifyPayment(offerId: number): Promise<Offer>;
   getSubscription(): Promise<Subscription>;
   upgrade(tier: SubscriptionTier): Promise<Subscription>;
+  markBillingSent(reference?: string): Promise<Subscription>;
+  activateUpgrade(userId: number): Promise<Subscription>;
   sellerAnalytics(): Promise<SellerAnalytics>;
   bulkCreateListings(listings: Record<string, unknown>[]): Promise<Listing[]>;
   startConversation(
@@ -163,6 +165,17 @@ export function createApiClient(baseUrl: string, tokens: TokenStore = memoryToke
 
     upgrade(tier) {
       return request("/subscription/upgrade", { method: "POST", body: JSON.stringify({ tier }) });
+    },
+
+    markBillingSent(reference) {
+      return request("/subscription/payment/mark-sent", {
+        method: "POST",
+        body: JSON.stringify({ reference: reference ?? null }),
+      });
+    },
+
+    activateUpgrade(userId) {
+      return request(`/subscription/${userId}/activate`, { method: "POST" });
     },
 
     sellerAnalytics() {
