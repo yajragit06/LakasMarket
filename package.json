@@ -1,0 +1,13 @@
+{
+  "name": "lakasmarket",
+  "private": true,
+  "version": "0.1.0",
+  "description": "LakasMarket — Brunei's anti-lowball SaaS marketplace (monorepo root).",
+  "workspaces": [
+    "packages/*",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @lakasmarket/web"
+  }
+}

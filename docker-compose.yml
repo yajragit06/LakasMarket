@@ -1,0 +1,55 @@
+# Local development stack: PostgreSQL + FastAPI backend + Vite/React frontend.
+#   docker compose up --build
+# Then: API http://localhost:8000/docs · Web http://localhost:5173
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lakas
+      POSTGRES_PASSWORD: lakas
+      POSTGRES_DB: lakasmarket
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lakas -d lakasmarket"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://lakas:lakas@db:5432/lakasmarket
+      SECRET_KEY: dev-secret-change-me
+      ENVIRONMENT: development
+      # Set OPENAI_API_KEY here to enable the Specs Guard.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/repo/frontend
+      - ./packages:/repo/packages
+      # Keep container-installed node_modules; don't shadow with host's.
+      - /repo/node_modules
+
+volumes:
+  pgdata:
