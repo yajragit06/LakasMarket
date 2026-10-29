@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "LakasMarket",
+    "slug": "lakasmarket",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#0b6b4f"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": { "supportsTablet": true },
+    "android": {},
+    "extra": {
+      "note": "Set EXPO_PUBLIC_API_URL to point at your backend."
+    }
+  }
+}
